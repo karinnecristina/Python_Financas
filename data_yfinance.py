@@ -1,7 +1,14 @@
 ## Bibliotecas
 import datetime
+import os
+import sqlalchemy
 import time
 import yfinance as yf
+from dotenv import load_dotenv
+
+## Parâmetros para conectar ao banco de dados:
+load_dotenv()
+connection = os.getenv('connection')
 
 ## Coletando dados diários da API do yahoo e armazenando em um dataframe pandas
 
@@ -21,18 +28,23 @@ while not connected:
         time.sleep(5)
         pass
 
-# Remodelando o dataframe (tratando o problema de multi-index)
-# Padronizando o nome das colunas (não é indicado ter espaços nos nomes)    
-df = df.stack().reset_index().rename(columns={'level_1':'Symbol','Adj Close':'Adj_Close'})
+def processing(df):
+    '''Remodelando o dataframe'''
+    df = df.stack().reset_index().rename(columns={'level_1':'Symbol','Adj Close':'Adj_Close'}) # tratando o problema de multi-index e padronizando o nome das colunas 
+    df = df[['Date','Symbol','Open','High','Low','Close','Adj_Close','Volume']] # Organizando as colunas
+    df.iloc[:,2:8] = df.iloc[:,2:8].applymap('{0:,.2f}'.format) # Formatando os valores (adicionando o separador de milhar e a quantidade de casas decimais)
+    df['Date'] = df['Date'].apply(lambda x: x.strftime('%d-%m-%Y')) # Convertendo o formato da data de (ano-mês-dia) para (dia-mês-ano)
+    return df
 
-# Organizando a ordem das coulnas
-df = df[['Date','Symbol','Open','High','Low','Close','Adj_Close','Volume']]
+def save_database(df):
+    '''Salvando os dados no banco'''
+    engine = sqlalchemy.create_engine(connection) # Estabelecendo conexão com o banco
+    return df.to_sql('tb_stock',
+                      engine,
+                      schema='tickers',
+                      if_exists='replace',
+                      index=False)
 
-# Formatando os valores (adicionando o separador de milhar e a quantidade de casas decimais)
-df.iloc[:,2:8] = df.iloc[:,2:8].applymap('{0:,.2f}'.format)
-
-# Convertendo o formato da data de (ano-mês-dia) para (dia-mês-ano)
-df['Date'] = df['Date'].apply(lambda x: x.strftime('%d-%m-%Y'))
-
-# Visualizando o resultado (as 5 primeiras linhas):
-print(df[:5])
+# Chamando as funcões    
+df = processing(df)
+database = save_database(df)
